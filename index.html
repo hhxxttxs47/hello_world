@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>从零折腾记录：将免费域名托管至 HE.net DNS 并绑定 GitHub Pages</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #2563eb;
+      --code-bg: #f1f5f9;
+      --quote-bg: #eff6ff;
+      --quote-border: #3b82f6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --card: #1e293b;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --border: #334155;
+        --accent: #60a5fa;
+        --code-bg: #0f172a;
+        --quote-bg: #172554;
+        --quote-border: #60a5fa;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 16px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.75;
+    }
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 40px 36px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+    }
+    @media (max-width: 600px) {
+      .container { padding: 24px 18px; }
+    }
+    h1 {
+      font-size: 1.75rem;
+      line-height: 1.35;
+      margin-top: 0;
+      margin-bottom: 12px;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    h2 {
+      font-size: 1.3rem;
+      margin-top: 32px;
+      margin-bottom: 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 {
+      font-size: 1.08rem;
+      margin-top: 22px;
+      margin-bottom: 8px;
+    }
+    p { margin: 12px 0; }
+    ul, ol { padding-left: 22px; margin: 10px 0; }
+    li { margin: 6px 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9em;
+      background: var(--code-bg);
+      padding: 2px 6px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      word-break: break-all;
+    }
+    blockquote {
+      margin: 16px 0;
+      padding: 12px 16px;
+      background: var(--quote-bg);
+      border-left: 4px solid var(--quote-border);
+      border-radius: 0 8px 8px 0;
+    }
+    blockquote p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>从零折腾记录：将免费域名托管至 HE.net DNS 并绑定 GitHub Pages</h1>
+    <div class="meta">域名：<code>nodeai.loc.cc</code> · DNS 托管：Hurricane Electric (HE.net) · 站点托管：GitHub Pages</div>
+
+    <p>最近领取了一个免费二级域名 <code>nodeai.loc.cc</code>（Yunamo 面板），由于没有现成的独立服务器 IP，且面板提示“长期健康检查失败将在 28 天内自动删除”，于是决定把域名的 DNS 托管到老牌免费的 <strong>Hurricane Electric Free DNS（he.net）</strong>，再免费绑定到 <strong>GitHub Pages</strong>，既能建站又能通过健康检查。</p>
+    <p>整个过程虽然不复杂，但中途踩了不少 <strong>DNS 拼接</strong> 和 <strong>负缓存（Negative Cache）</strong> 的坑。特此记录下来，供以后参考。</p>
+
+    <h2>整体思路</h2>
+    <ol>
+      <li>在原域名平台配置验证（NS 委派或 TXT 验证），让 <strong>HE.net</strong> 接管域名。</li>
+      <li>在 <strong>HE.net</strong> 添加 GitHub Pages 的官方 IP（<code>A</code> 记录）和 <code>www</code> 别名（<code>CNAME</code> 记录）。</li>
+      <li>在 <strong>GitHub 仓库</strong> 开启 Pages，绑定自定义域名并开启 HTTPS。</li>
+      <li>在原域名平台将名称服务器切回 HE.net，等待全球生效。</li>
+    </ol>
+
+    <h2>第一步：将域名添加到 HE.net（含避坑）</h2>
+    <p>登录 <a href="https://dns.he.net/" target="_blank" rel="noopener">dns.he.net</a>，点击左侧 <strong>Add a new domain</strong> 输入 <code>nodeai.loc.cc</code>。</p>
+    <p>如果此时域名还在原服务商（<code>ns1.nodelook.com</code> / <code>ns2.nodelook.com</code>）下，HE.net 会报错提示：</p>
+    <blockquote><p><code>ERROR: Delegation was not found. Please delegate to ns1, ns2, ns3, ns4 and ns5.he.net then retry.</code></p></blockquote>
+    <p>同时下方会给出一条备用的 <strong>TXT 验证记录</strong>（以页面实际生成为准）：</p>
+    <ul>
+      <li><strong>Name</strong>：<code>dnshenet-key.nodeai.loc.cc</code></li>
+      <li><strong>Value</strong>：<code>5p7OvYn2MbPhPc+RFyDEsKMKS5AruBfgiRd9AQ9dEjw</code></li>
+    </ul>
+
+    <h3>踩坑记录 1：面板自动拼接后缀导致名称重复</h3>
+    <p>在 Yunamo 的 DNS 记录面板添加 TXT 记录时，“名称”栏会<strong>自动拼接</strong> <code>.nodeai.loc.cc</code> 后缀。</p>
+    <ul>
+      <li><strong>错误填法</strong>：填 <code>dnshenet-key.nodeai.loc.cc</code> → 实际生效为 <code>dnshenet-key.nodeai.loc.cc.nodeai.loc.cc</code></li>
+      <li><strong>正确填法</strong>：只填 <code>dnshenet-key</code></li>
+    </ul>
+
+    <h3>踩坑记录 2：注意字符大小写与字体混淆</h3>
+    <p>部分面板字体中大写字母 <code>O</code> 和数字 <code>0</code> 非常相似，<strong>务必直接复制粘贴</strong>验证值，不要手动输入。</p>
+
+    <h3>踩坑记录 3：DNS 负缓存（Negative Cache）</h3>
+    <p>如果在记录还没同步或名称填错时就去点 HE.net 验证，HE.net 的递归解析器会把“该记录不存在（NXDOMAIN）”的结果缓存下来。根据原域名的 SOA 参数，这个负缓存最长会保留 <strong>30～60 分钟</strong>。改对记录后如果依然不通过，<strong>不要反复删改记录</strong>，耐心等待缓存过期后再点一次提交即可通过。</p>
+
+    <h2>第二步：切换自定义 NS 服务器</h2>
+    <p>HE.net 成功添加域名后，回到 Yunamo 面板切换到 <strong>自定义 NS</strong>，填入 HE.net 的 5 个名称服务器并保存：</p>
+    <ul>
+      <li><code>ns1.he.net</code></li>
+      <li><code>ns2.he.net</code></li>
+      <li><code>ns3.he.net</code></li>
+      <li><code>ns4.he.net</code></li>
+      <li><code>ns5.he.net</code></li>
+    </ul>
+
+    <h2>第三步：在 HE.net 配置 GitHub Pages 解析</h2>
+    <p>因为没有自己的服务器 IP，这里使用 GitHub Pages 作为托管（注意：HE.net 不支持根域名的 CNAME 拉平，所以根域名必须用 <strong>A 记录</strong>，不能用 CNAME）。</p>
+    <p>进入 HE.net 对应域名的管理页面，注意 <strong>HE.net 的 Name 栏不要填 <code>@</code></strong>：</p>
+    <ol>
+      <li>
+        <strong>添加 4 条根域名 A 记录</strong>（点击 <code>New A</code>）：
+        <ul>
+          <li><strong>Name</strong>：全部填 <code>nodeai.loc.cc</code>（不能写成其他自定义名称，否则会变成子域名）</li>
+          <li><strong>IPv4 Address</strong>：分别填入 GitHub Pages 官方 IP：
+            <code>185.199.108.153</code>、<code>185.199.109.153</code>、<code>185.199.110.153</code>、<code>185.199.111.153</code>
+          </li>
+          <li><strong>TTL</strong>：<code>300</code></li>
+        </ul>
+      </li>
+      <li>
+        <strong>添加 <code>www</code> 子域名 CNAME 记录</strong>（点击 <code>New CNAME</code>）：
+        <ul>
+          <li><strong>Name</strong>：<code>www</code></li>
+          <li><strong>Hostname</strong>：<code>hhxxttxs47.github.io</code>（替换为你自己的 GitHub 用户名）</li>
+          <li><strong>TTL</strong>：<code>300</code></li>
+        </ul>
+      </li>
+    </ol>
+    <blockquote>
+      <p><strong>为什么要加 <code>www</code>？</strong> 在 GitHub Pages 绑定根域名时，GitHub 会同时检查 <code>www</code> 子域名的 DNS。如果没配 <code>www</code>，页面会出现黄色警告 <code>www.nodeai.loc.cc is improperly configured (InvalidDNSError)</code>。</p>
+    </blockquote>
+
+    <h2>第四步：在 GitHub 开启 Pages 并绑定域名</h2>
+    <ol>
+      <li>在 GitHub 新建一个 <strong>Public</strong> 仓库，上传 <code>index.html</code>。</li>
+      <li>进入仓库的 <strong>Settings → Pages</strong>：
+        <ul>
+          <li><strong>Source</strong> 选择 <code>Deploy from a branch</code>，分支选 <code>main</code>（<code>/ (root)</code>），点击 <strong>Save</strong>。</li>
+          <li>在 <strong>Custom domain</strong> 输入 <code>nodeai.loc.cc</code> 并点击 <strong>Save</strong>。</li>
+        </ul>
+      </li>
+      <li>如果先点了保存、后补加的 <code>www</code> CNAME 记录，同样可能触发 HE.net 的 SOA 负缓存（<strong>900 秒 / 15 分钟</strong>）。等待 15 分钟后点击 <strong>Check again</strong> 即可通过检查。</li>
+      <li>DNS 检查变绿、证书自动签发完成后，勾选 <strong>Enforce HTTPS</strong>，大功告成！</li>
+    </ol>
+
+    <h2>常见排查小工具</h2>
+    <p>遇到 DNS 迟迟不生效时，可以用浏览器直接访问公共 DoH 接口查看全球实际解析结果，判断是“没同步”还是“被负缓存了”：</p>
+    <ul>
+      <li>Google DNS：<code>https://dns.google/resolve?name=你的域名&amp;type=A</code></li>
+      <li>Cloudflare DNS：<code>https://cloudflare-dns.com/dns-query?name=你的域名&amp;type=TXT</code>（需带请求头 <code>Accept: application/dns-json</code>）</li>
+    </ul>
+  </main>
+</body>
+</html>
